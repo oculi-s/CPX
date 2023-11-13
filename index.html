@@ -335,12 +335,13 @@
                     const th = _$('th');
                     const td = _$('td');
                     const td2 = _$('td');
+                    tr.dataset.code = code.value;
                     anchor.id = code.value;
                     anchor.innerText = code.value;
                     th.appendChild(anchor);
                     td.innerText = name.value;
                     tr.appendChildren(th, td, td2);
-                    $('#disease tbody').appendChild(tr);
+                    $('#disease tbody').insertOrder(tr);
                     code.value = '';
                     name.value = '';
                 })
@@ -366,6 +367,7 @@
                         anchor.innerText = code;
                         th.appendChild(anchor);
                         td.innerText = name;
+                        tr.dataset.code = code;
                         tr.appendChildren(th, td, td2);
                         $('#disease tbody').appendChild(tr);
                     })
