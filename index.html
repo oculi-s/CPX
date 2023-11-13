@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome/css/font-awesome.min.css">
 
     <script type="module">
-        let memory = {};
+        let memory = {}, disease = {};
         window.$ = document.querySelector.bind(document);
         window.$$ = document.querySelectorAll.bind(document);
         window._$ = document.createElement.bind(document);
@@ -57,6 +57,26 @@
         const app = fb.initializeApp(fbConfig);
         const ss = sessionStorage;
 
+        if (ss.sector) $('#sector').value = ss.sector;
+        $('#sector').onchange = () => { ss.sector = $('#sector').value; }
+        const editor = $("#editor");
+
+        const types = {
+            "0": 'OX',
+            "1": '객관식',
+            "2": '주관식',
+            "3": ""
+        }
+        const typeInputDefault = _$('select');
+        typeInputDefault.name = 'type';
+        Object.entries(types).forEach(([a, b]) => {
+            if (!b) return;
+            const option = _$('option');
+            option.value = a;
+            option.innerHTML = b;
+            typeInputDefault.appendChild(option);
+        })
+
         async function init(reload = false) {
             if (reload && Date.now() - ss.lastInit < 300) {
                 alert('리로드는 0.3초에 한번씩 가능합니다.');
@@ -64,30 +84,10 @@
             }
             ss.lastInit = Date.now();
 
-            if (ss.sector) $('#sector').value = ss.sector;
-            $('#sector').onchange = () => { ss.sector = $('#sector').value; }
-
             const db = fb.database();
-            const editor = $("#editor");
-
-            const types = {
-                "0": 'OX',
-                "1": '객관식',
-                "2": '주관식',
-                "3": ""
-            }
-            const typeInputDefault = _$('select');
-            typeInputDefault.name = 'type';
-            Object.entries(types).forEach(([a, b]) => {
-                if (!b) return;
-                const option = _$('option');
-                option.value = a;
-                option.innerHTML = b;
-                typeInputDefault.appendChild(option);
-            })
 
 
-            async function getCode(code) {
+            async function newCode(code) {
                 if (!code) return false;
                 const data = await db.ref('question/')
                     .get()
@@ -99,17 +99,14 @@
                 }
                 const res = `${code}${i.toString(36).toUpperCase()}`;
                 await db.ref(`question/${res}`).set({
-                    data: "",
-                    code: res,
-                    type: "",
-                    answer: []
+                    data: "", code: res, type: "", answer: []
                 })
                 return res;
             }
 
             async function makeBigQuestion() {
                 if ($('#sector').value) {
-                    const code = await getCode(`Q${$('#sector').value}`);
+                    const code = await newCode(`Q${$('#sector').value}`);
                     if (!code) return;
                     editor.insertOrder(makeQuestion({ code }));
                 } else {
@@ -214,12 +211,9 @@
                 })
                 add.onclick = async () => {
                     wrap.appendChild(makeAnswer({}, true));
-                    // await db.ref(`question/${q?.code}`).set({
-                    //     ...q,
-                    // })
                 }
                 subq.onclick = async () => {
-                    const next = await getCode(`${q?.code}`);
+                    const next = await newCode(`${q?.code}`);
                     if (!next) return;
                     editor.insertOrder(makeQuestion({ code: next }, true));
                 }
@@ -251,7 +245,7 @@
                 dataInput.type = 'text';
                 if (isedit) {
                     dataInput.placeholder = '답변내용을 입력해주세요';
-                    nextInput.placeholder = '다음질문의 코드를 입력해주세요';
+                    nextInput.placeholder = '다음질문/질병의 코드를 입력해주세요';
                     dataInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
                     nextInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
                     div.appendChildren(dataInput, nextInput, btnArea);
@@ -260,7 +254,7 @@
                     data.innerHTML = a?.data || '';
                     nextInner.innerHTML = a?.next || '';
                     next.href = a?.next ? `#${a?.next}` : '';
-                    if (!memory[a?.next]) next.classList.add('red');
+                    if (!memory[a?.next] && !disease[a?.next]) next.classList.add('red');
                     div.appendChildren(data, next, btnArea);
                 }
 
@@ -279,7 +273,7 @@
                     } else {
                         const nextCode = nextInput.value;
                         next.href = `#${nextCode}`;
-                        if (!memory[nextCode]) next.classList.add('red');
+                        if (!memory[nextCode] || disease[nextCode]) next.classList.add('red');
                         else next.classList.remove('red');
                         nextInner.innerHTML = nextCode;
                         data.innerHTML = dataInput.value;
@@ -312,15 +306,15 @@
                 return div;
             }
 
-            function setPopup(data) {
+            function setPopup(data, disease) {
                 const popup = $("#popup");
-                $$('a[href^="#Q"]').forEach(e => {
+                $$('a[href^="#"]').forEach(e => {
                     const code = new URL(e.href).hash.slice(1);
-                    const { top, left, right, bottom } = e.getBoundingClientRect();
                     e.onmouseover = () => {
-                        popup.style.top = `${top - window.scrollY - 30}px`;
-                        popup.style.left = `${left - window.scrollX + 10}px`;
-                        popup.innerHTML = `${code} : ${data[code]?.data || '데이터가 존재하지 않음'}`
+                        const { top, left, right, bottom } = e.getBoundingClientRect();
+                        popup.style.top = `${top - 30}px`;
+                        popup.style.left = `${left + 10}px`;
+                        popup.innerHTML = `${code} : ${data[code]?.data || disease[code] || '데이터가 존재하지 않음'}`
                         popup.style.display = 'block';
                     }
                     e.onmouseout = () => {
@@ -329,22 +323,67 @@
                 })
             }
 
-            db.ref('question/')
+            $('#diseaseName').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
+            $('#diseaseCode').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
+            $('#disease a').onclick = addDisease;
+            function addDisease() {
+                const code = $('#diseaseCode');
+                const name = $('#diseaseName');
+                db.ref(`disease/${code.value}`).set(name.value).then(() => {
+                    const tr = _$('tr');
+                    const anchor = _$('a');
+                    const th = _$('th');
+                    const td = _$('td');
+                    const td2 = _$('td');
+                    anchor.id = code.value;
+                    anchor.innerText = code.value;
+                    th.appendChild(anchor);
+                    td.innerText = name.value;
+                    tr.appendChildren(th, td, td2);
+                    $('#disease tbody').appendChild(tr);
+                    code.value = '';
+                    name.value = '';
+                })
+            }
+
+            db.ref('disease/')
                 .get()
                 .then(data => data.val())
                 .then(data => {
-                    memory = data;
-                    editor.innerHTML = '';
-                    Object.keys(data).sort().forEach(k => {
-                        let q = data[k];
-                        const wrap = makeQuestion(q);
-                        editor.appendChild(wrap);
+                    disease = data || {};
+                    Object.entries(disease).forEach(([code, name]) => {
+                        const tr = _$('tr');
+                        const anchor = _$('a');
+                        const th = _$('th');
+                        const td = _$('td');
+                        const td2 = _$('td');
+                        anchor.id = code;
+                        anchor.innerText = code;
+                        th.appendChild(anchor);
+                        td.innerText = name;
+                        tr.appendChildren(th, td, td2);
+                        $('#disease tbody').appendChild(tr);
                     })
                     return data;
-                }).then(data => {
-                    setPopup(data);
-                }).then(() => {
-                    if (location.hash) location.href = location.hash;
+                }).then((disease) => {
+                    db.ref('question/')
+                        .get()
+                        .then(data => data.val())
+                        .then(data => {
+                            memory = data;
+                            editor.innerHTML = '';
+                            Object.keys(data).sort().forEach(k => {
+                                let q = data[k];
+                                const wrap = makeQuestion(q);
+                                editor.appendChild(wrap);
+                            })
+                            return data;
+                        }).then(data => {
+                            if (location.hash) location.href = location.hash;
+                            return data
+                        }).then(data => {
+                            setPopup(data, disease);
+                        })
                 })
             $('#addQuestion').onclick = makeBigQuestion;
 
@@ -381,9 +420,59 @@
             <div id="loading"></div>
         </div>
         <div id="popup"></div>
+        <div id="disease">
+            <hr>
+            <h2>질병코드 추가</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <td>KOICD 코드</td>
+                        <th>질병명</th>
+                        <td>추가하기</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th><input type="text" id="diseaseCode"></th>
+                        <td><input type="text" id="diseaseName"></td>
+                        <td><a class="fa fa-plus"></a></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
         <a href="#top" class="fa fa-angle-double-up" id="totop"></a>
     </div>
     <style>
+        hr {
+            margin: 30px;
+        }
+
+        #disease table {
+            margin: auto;
+            width: 100%;
+            max-width: 800px;
+            border-collapse: collapse;
+        }
+
+        #disease thead {
+            background: #aaa;
+        }
+
+        #disease table tr>* {
+            border: 1px solid;
+            padding: 5px;
+        }
+
+        #disease table a {
+            cursor: pointer;
+        }
+
+        #disease table input {
+            width: 90%;
+            height: 100%;
+            border: none;
+        }
+
         .red {
             color: red !important;
         }
