@@ -10,23 +10,39 @@
     <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-analytics.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-firestore.js"></script>
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome/css/font-awesome.min.css">
 
     <script type="module">
-        if (Node.prototype.appendChildren === undefined) {
-            Node.prototype.appendChildren = function () {
-                let children = [...arguments];
-                if (
-                    children.length == 1 &&
-                    Object.prototype.toString.call(children[0]) == "[object Array]"
-                ) {
-                    children = children[0];
-                }
+        let memory = {};
+        window.$ = document.querySelector.bind(document);
+        window.$$ = document.querySelectorAll.bind(document);
+        window._$ = document.createElement.bind(document);
+        HTMLElement.prototype.$$ = HTMLElement.prototype.querySelectorAll;
+        HTMLElement.prototype.$ = HTMLElement.prototype.querySelector;
+        NodeList.prototype.forEach = Array.prototype.forEach;
+        NodeList.prototype.map = Array.prototype.map;
+        Node.prototype.appendChildren = function () {
+            let children = [...arguments];
+            if (
+                children.length == 1 &&
+                Object.prototype.toString.call(children[0]) == "[object Array]"
+            ) {
+                children = children[0];
+            }
 
-                const documentFragment = document.createDocumentFragment();
-                children.forEach(c => documentFragment.appendChild(c));
-                this.appendChild(documentFragment);
-            };
+            const documentFragment = document.createDocumentFragment();
+            children.forEach(c => documentFragment.appendChild(c));
+            this.appendChild(documentFragment);
+        };
+        Node.prototype.insertOrder = function (child) {
+            for (let e of this.childNodes) {
+                var code = e.dataset.code;
+                if (child.dataset.code < code) {
+                    this.insertBefore(child, e);
+                    return e;
+                }
+            }
+            return this.insertBefore(child, this.lastChild);
         }
 
         const fb = firebase;
@@ -38,39 +54,79 @@
             messagingSenderId: "773633004986",
             appId: "1:773633004986:web:e9642f2de2461518283983"
         };
+        const app = fb.initializeApp(fbConfig);
+        const ss = sessionStorage;
 
-        (async () => {
-            window.$ = document.querySelector.bind(document);
-            window.$$ = document.querySelectorAll.bind(document);
-            window._$ = document.createElement.bind(document);
-            const ss = sessionStorage;
+        async function init(reload = false) {
+            if (reload && Date.now() - ss.lastInit < 300) {
+                alert('리로드는 0.3초에 한번씩 가능합니다.');
+                return;
+            }
+            ss.lastInit = Date.now();
+
             if (ss.sector) $('#sector').value = ss.sector;
             $('#sector').onchange = () => { ss.sector = $('#sector').value; }
 
-            const app = fb.initializeApp(fbConfig);
             const db = fb.database();
+            const editor = $("#editor");
 
             const types = {
                 "0": 'OX',
                 "1": '객관식',
-                "2": '주관식'
+                "2": '주관식',
+                "3": ""
+            }
+            const typeInputDefault = _$('select');
+            typeInputDefault.name = 'type';
+            Object.entries(types).forEach(([a, b]) => {
+                if (!b) return;
+                const option = _$('option');
+                option.value = a;
+                option.innerHTML = b;
+                typeInputDefault.appendChild(option);
+            })
+
+
+            async function getCode(code) {
+                if (!code) return false;
+                const data = await db.ref('question/')
+                    .get()
+                    .then(e => e.val())
+                let i = 0;
+                while (Object.keys(data).includes(`${code}${i.toString(36).toUpperCase()}`)) {
+                    i++;
+                    if (i == 36) { alert('최대로 추가할 수 있는 질문의 개수를 초과했습니다.'); return false; }
+                }
+                const res = `${code}${i.toString(36).toUpperCase()}`;
+                await db.ref(`question/${res}`).set({
+                    data: "",
+                    code: res,
+                    type: "",
+                    answer: []
+                })
+                return res;
             }
 
-            function makeQuestion(q) {
+            async function makeBigQuestion() {
+                if ($('#sector').value) {
+                    const code = await getCode(`Q${$('#sector').value}`);
+                    if (!code) return;
+                    editor.insertOrder(makeQuestion({ code }));
+                } else {
+                    alert("분야를 선택해주세요");
+                }
+            }
+
+            function makeQuestion(q, isedit = false) {
                 const wrap = _$('div');
                 const div = _$('div');
                 div.classList.add('question');
-                const type = _$('span');
                 const anchor = _$('a');
                 const code = _$('h2');
-                const data = _$('span');
-                data.innerHTML = q?.data || '';
-                type.innerHTML = q?.type ? `(${types[q?.type]})` : '';
                 code.innerHTML = q?.code || '';
 
                 wrap.classList.add('questionWrap');
-                data.classList.add('data');
-                type.classList.add('type');
+                wrap.dataset.code = q?.code || '';
                 code.classList.add('code');
 
                 const btnArea = _$('div');
@@ -79,142 +135,228 @@
                 const subq = _$('button');
                 const del = _$('button');
                 btnArea.classList.add('btnArea');
-                edit.classList.add('edit', 'fa', 'fa-edit');
                 add.classList.add('add', 'fa', 'fa-plus');
                 subq.classList.add('subq', 'fa', 'fa-plus');
                 del.classList.add('del', 'fa', 'fa-trash');
-                edit.innerHTML = '수정';
+                edit.classList.add('edit', 'fa', isedit ? 'fa-save' : 'fa-edit');
+                edit.innerHTML = isedit ? '저장' : '수정';
                 add.innerHTML = '답변추가';
                 subq.innerHTML = '하위질문추가';
                 del.innerHTML = '삭제';
-                btnArea.appendChildren(edit, add, subq, del);
+
+                if (q?.code?.length > 7) {
+                    btnArea.appendChildren(edit, del);
+                } else if (q?.code.startsWith('Q')) {
+                    btnArea.appendChildren(edit, add, subq, del);
+                } else if (q?.code == 'A0') {
+                    btnArea.appendChild(add);
+                }
 
                 anchor.id = q?.code || '';
                 anchor.appendChild(code);
-                div.appendChildren(btnArea, anchor, data, type);
+                const data = _$('span');
+                const type = _$('span');
+                const typeInput = _$('select');
+                const dataInput = _$('input');
+                typeInput.innerHTML = typeInputDefault.innerHTML;
+                type.dataset.type = q?.type || null;
+                data.classList.add('data');
+                type.classList.add('type');
                 wrap.appendChild(div);
-                edit.onclick = () => {
+
+                if (isedit) {
+                    dataInput.placeholder = '질문내용을 입력해주세요';
+                    typeInput.selectedIndex = q?.type || null;
+                    dataInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                    div.appendChildren(btnArea, anchor, dataInput, typeInput);
+                    dataInput.focus();
+                } else {
+                    data.innerHTML = q?.data || '';
+                    type.innerHTML = types[q?.type] ? `(${types[q?.type]})` : '';
+                    div.appendChildren(btnArea, anchor, data, type);
+                }
+
+                function editToggle() {
                     if (edit.classList.contains('fa-edit')) {
-                        data.setAttribute('contenteditable', true);
-                        type.setAttribute('contenteditable', true);
+                        dataInput.value = data.innerHTML;
+                        dataInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                        typeInput.selectedIndex = type.dataset.type;
+                        data.replaceWith(dataInput);
+                        type.replaceWith(typeInput);
                         edit.classList.replace('fa-edit', 'fa-save');
                         edit.innerHTML = '저장'
                     } else {
-                        // db.ref('question/')
-                        data.setAttribute('contenteditable', false);
-                        type.setAttribute('contenteditable', false);
+                        data.innerHTML = dataInput.value;
+                        type.innerHTML = `(${types[typeInput.value]})`;
+                        type.dataset.type = typeInput.value;
+                        dataInput.replaceWith(data);
+                        typeInput.replaceWith(type);
                         edit.classList.replace('fa-save', 'fa-edit');
                         edit.innerHTML = '수정'
+                        db.ref(`question/${q?.code}`).update({ data: dataInput.value, type: typeInput.value });
+                    }
+                }
+                edit.onclick = editToggle;
+                wrap.ondblclick = () => {
+                    if (edit.classList.contains('fa-edit')) {
+                        editToggle();
                     }
                 }
                 del.onclick = () => {
-                    if (confirm('질문과 하위 답변, 하위질문을 삭제하시겠습니까?')) {
+                    if (confirm('질문과 하위 답변을 삭제하시겠습니까?')) {
                         wrap.remove();
-                        // db.ref('question/')
+                        db.ref(`question/${q?.code}`).set(null);
                     }
                 }
                 const answers = _$('div');
                 q?.answer?.forEach(a => {
                     wrap.appendChild(makeAnswer(a));
                 })
-                add.onclick = () => {
-                    wrap.appendChild(makeAnswer());
+                add.onclick = async () => {
+                    wrap.appendChild(makeAnswer({}, true));
+                    // await db.ref(`question/${q?.code}`).set({
+                    //     ...q,
+                    // })
                 }
-                subq.onclick = () => {
-                    const next = `${q?.code}1`;
-                    $('#editor').insertBefore(makeQuestion({ code: next }), wrap.nextElementSibling);
+                subq.onclick = async () => {
+                    const next = await getCode(`${q?.code}`);
+                    if (!next) return;
+                    editor.insertOrder(makeQuestion({ code: next }, true));
                 }
-                wrap.setAttribute('data-depth', q?.code?.length - 3);
+                wrap.setAttribute('data-depth', q?.code?.length - 2);
                 return wrap;
             }
 
-            function makeAnswer(a) {
+            function makeAnswer(a, isedit = false) {
                 const div = _$('div');
                 div.classList.add('answer');
-                const data = _$('span');
-                const anchor = _$('a');
-                const next = _$('span');
-                data.classList.add('data');
-                next.classList.add('next');
-                data.innerHTML = a?.data || '';
-                next.innerHTML = a?.next || '';
-                anchor.href = a?.next ? `#${a?.next}` : '';
-                if (!$(`#${a?.next}`)) anchor.style.color = 'red';
-                anchor.appendChild(next);
-
                 const btnArea = _$('span');
                 const edit = _$('button');
                 const del = _$('button');
                 btnArea.classList.add('btnArea');
-                edit.classList.add('edit', 'fa', 'fa-edit');
+                edit.classList.add('edit', 'fa', isedit ? 'fa-save' : 'fa-edit');
                 del.classList.add('del', 'fa', 'fa-trash');
-                edit.innerHTML = '수정';
+                edit.innerHTML = isedit ? '저장' : '수정';
                 del.innerHTML = '삭제';
-
                 btnArea.appendChildren(edit, del);
-                div.appendChildren(data, anchor, btnArea);
-                edit.onclick = () => {
-                    if (edit.classList.contains('fa-edit')) {
-                        data.setAttribute('contenteditable', true);
-                        next.setAttribute('contenteditable', true);
-                        edit.classList.replace('fa-edit', 'fa-save');
-                        edit.innerHTML = '저장'
-                    } else {
-                        data.setAttribute('contenteditable', false);
-                        next.setAttribute('contenteditable', false);
-                        edit.classList.replace('fa-save', 'fa-edit');
-                        edit.innerHTML = '수정'
-                    }
+
+                let data = _$('span');
+                let next = _$('a');
+                let nextInner = _$('span');
+                let dataInput = _$('input');
+                let nextInput = _$('input');
+                data.classList.add('data');
+                nextInner.classList.add('next');
+                next.appendChild(nextInner);
+                dataInput.type = 'text';
+                if (isedit) {
+                    dataInput.placeholder = '답변내용을 입력해주세요';
+                    nextInput.placeholder = '다음질문의 코드를 입력해주세요';
+                    dataInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                    nextInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                    div.appendChildren(dataInput, nextInput, btnArea);
+                    dataInput.focus();
+                } else {
+                    data.innerHTML = a?.data || '';
+                    nextInner.innerHTML = a?.next || '';
+                    next.href = a?.next ? `#${a?.next}` : '';
+                    if (!memory[a?.next]) next.classList.add('red');
+                    div.appendChildren(data, next, btnArea);
                 }
 
+                function editToggle() {
+                    event.preventDefault();
+                    if (edit.classList.contains('fa-edit')) {
+                        dataInput.value = data.innerHTML;
+                        nextInput.value = next.innerText;
+                        data.replaceWith(dataInput);
+                        next.replaceWith(nextInput);
+                        edit.classList.replace('fa-edit', 'fa-save');
+                        edit.innerHTML = '저장'
+                        dataInput.focus();
+                        dataInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                        nextInput.onkeydown = e => { if (e.key == 'Enter') editToggle(); }
+                    } else {
+                        const nextCode = nextInput.value;
+                        next.href = `#${nextCode}`;
+                        if (!memory[nextCode]) next.classList.add('red');
+                        else next.classList.remove('red');
+                        nextInner.innerHTML = nextCode;
+                        data.innerHTML = dataInput.value;
+                        dataInput.replaceWith(data);
+                        nextInput.replaceWith(next);
+                        edit.classList.replace('fa-save', 'fa-edit');
+                        edit.innerHTML = '수정'
+                        const question = edit.closest('.questionWrap');
+                        const code = question.dataset.code;
+                        const answer = question.$$('.answer').map(e => ({ data: e.$('.data').innerText, next: e.$('.next').innerText }));
+                        db.ref(`question/${code}`).update({ answer });
+                        setPopup(memory);
+                    }
+                }
+                edit.onclick = editToggle;
+                div.ondblclick = () => {
+                    if (edit.classList.contains('fa-edit')) {
+                        editToggle();
+                    }
+                }
                 del.onclick = () => {
                     if (confirm('답변을 삭제하시겠습니까?')) {
+                        const question = div.closest('.questionWrap');
+                        const code = question.dataset.code;
                         div.remove();
-                        // db.ref('question/')
+                        const answer = question.$$('.answer').map(e => ({ data: e.$('.data').innerText, next: e.$('.next').innerText }));
+                        db.ref(`question/${code}`).update({ answer });
                     }
                 }
                 return div;
             }
 
-            // db.ref('question/QR0').set({
-            //     "data": "가슴이 어떻게 아프신가요?",
-            //     "type": 2,
-            //     "code": "QR0",
-            //     "answer": [{
-            //         "data": "명치 주위가 아파요",
-            //         "next": "QC0"
-            //     }]
-            // })
+            function setPopup(data) {
+                const popup = $("#popup");
+                $$('a[href^="#Q"]').forEach(e => {
+                    const code = new URL(e.href).hash.slice(1);
+                    const { top, left, right, bottom } = e.getBoundingClientRect();
+                    e.onmouseover = () => {
+                        popup.style.top = `${top - window.scrollY - 30}px`;
+                        popup.style.left = `${left - window.scrollX + 10}px`;
+                        popup.innerHTML = `${code} : ${data[code]?.data || '데이터가 존재하지 않음'}`
+                        popup.style.display = 'block';
+                    }
+                    e.onmouseout = () => {
+                        popup.style.display = 'none';
+                    }
+                })
+            }
+
             db.ref('question/')
                 .get()
-                .then(e => e.val())
-                .then(e => {
-                    console.log(e);
-                    $('#editor').innerHTML = '';
-                    Object.keys(e).sort().forEach(k => {
-                        let q = e[k];
+                .then(data => data.val())
+                .then(data => {
+                    memory = data;
+                    editor.innerHTML = '';
+                    Object.keys(data).sort().forEach(k => {
+                        let q = data[k];
                         const wrap = makeQuestion(q);
-                        $('#editor').appendChild(wrap);
+                        editor.appendChild(wrap);
                     })
+                    return data;
+                }).then(data => {
+                    setPopup(data);
                 }).then(() => {
                     if (location.hash) location.href = location.hash;
                 })
-            $('#addQuestion').onclick = () => {
-                if ($('#sector').value) {
-                    const code = `Q${$('#sector').value}1`;
-                    $('#editor').appendChild(makeQuestion({ code }));
-                } else {
-                    alert("분야를 선택해주세요");
-                }
-            }
-        })();
+            $('#addQuestion').onclick = makeBigQuestion;
 
+        };
+        init();
+        $('h1 a').onclick = () => { init(true) };
     </script>
 </head>
 
 <body>
     <div id="editorWrap">
-        <h1>CPX data manager</h1>
+        <h1>CPX data manager <a class="fa fa-refresh" id="top"></a></h1>
         <div>
             <select name="sector" id="sector">
                 <option value="G">(G) 소화기</option>
@@ -233,14 +375,50 @@
         <ol id="guide">
             <li>주소창 끝에 (#질문코드)를 입력하면 질문으로 바로 이동합니다.</li>
             <li>질문코드는 진료과목을 입력하면 자동으로 배정됩니다.</li>
+            <li>문제가 있는 경우 오른쪽 위 새로고침 버튼을 눌려주세요.</li>
         </ol>
         <div id="editor">
             <div id="loading"></div>
         </div>
+        <div id="popup"></div>
+        <a href="#top" class="fa fa-angle-double-up" id="totop"></a>
     </div>
     <style>
+        .red {
+            color: red !important;
+        }
+
         * {
             box-sizing: border-box;
+            font-family: sans-serif;
+        }
+
+        h1 a {
+            cursor: pointer;
+        }
+
+        #popup {
+            position: fixed;
+            background: #aaa;
+            border: 1px solid;
+            font-size: .8em;
+            padding: 5px;
+            display: none;
+        }
+
+        #totop {
+            color: black;
+            border: 1px solid;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            position: fixed;
+            right: 30px;
+            bottom: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 20px;
         }
 
         #editorWrap,
@@ -297,6 +475,10 @@
 
         a {
             text-decoration: none;
+        }
+
+        a:visited {
+            color: blue;
         }
 
         *:focus {
@@ -365,6 +547,12 @@
             padding: 5px;
         }
 
+        .answer input {
+            margin: auto 5px;
+            font-size: 1em;
+            height: 100%;
+        }
+
         .answer .btnArea {
             margin-left: auto;
             align-self: center;
@@ -403,6 +591,24 @@
         .btnArea>* {
             cursor: pointer;
             padding: 3px;
+        }
+
+        .type {
+            font-size: .9em;
+            font-weight: bold;
+            border-radius: 8px;
+        }
+
+        .type[data-type="0"] {
+            background: rgba(0, 255, 0, .2);
+        }
+
+        .type[data-type="1"] {
+            background: rgba(0, 0, 255, .2);
+        }
+
+        .type[data-type="2"] {
+            background: rgba(255, 0, 0, .2);
         }
 
         @media (max-width:768px) {
