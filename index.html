@@ -36,7 +36,7 @@
         };
         Node.prototype.insertOrder = function (child) {
             for (let e of this.childNodes) {
-                var code = e.dataset.code;
+                var code = e.dataset?.code;
                 if (child.dataset.code < code) {
                     this.insertBefore(child, e);
                     return e;
@@ -326,22 +326,31 @@
             $('#diseaseName').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
             $('#diseaseCode').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
             $('#disease a').onclick = addDisease;
+
+            function makeDisease(code, name) {
+                const tr = _$('tr');
+                const anchor = _$('a');
+                const th = _$('th');
+                const td = _$('td');
+                const td2 = _$('td');
+                const edit = _$('button');
+                edit.classList.add('fa', 'fa-edit');
+                edit.innerHTML = '수정'
+                td2.appendChild(edit);
+                anchor.id = code;
+                anchor.innerText = code;
+                th.appendChild(anchor);
+                td.innerText = name;
+                tr.dataset.code = code;
+                tr.appendChildren(th, td, td2);
+                return tr;
+            }
+
             function addDisease() {
                 const code = $('#diseaseCode');
                 const name = $('#diseaseName');
                 db.ref(`disease/${code.value}`).set(name.value).then(() => {
-                    const tr = _$('tr');
-                    const anchor = _$('a');
-                    const th = _$('th');
-                    const td = _$('td');
-                    const td2 = _$('td');
-                    tr.dataset.code = code.value;
-                    anchor.id = code.value;
-                    anchor.innerText = code.value;
-                    th.appendChild(anchor);
-                    td.innerText = name.value;
-                    tr.appendChildren(th, td, td2);
-                    $('#disease tbody').insertOrder(tr);
+                    $('#disease tbody').insertOrder(makeDisease(code.value, name.value));
                     code.value = '';
                     name.value = '';
                 })
@@ -354,22 +363,7 @@
                     disease = data || {};
                     Object.keys(disease).sort().forEach((code) => {
                         const name = disease[code];
-                        const tr = _$('tr');
-                        const anchor = _$('a');
-                        const th = _$('th');
-                        const td = _$('td');
-                        const td2 = _$('td');
-                        const edit = _$('button');
-                        edit.classList.add('fa', 'fa-edit');
-                        edit.innerHTML = '수정'
-                        td2.appendChild(edit);
-                        anchor.id = code;
-                        anchor.innerText = code;
-                        th.appendChild(anchor);
-                        td.innerText = name;
-                        tr.dataset.code = code;
-                        tr.appendChildren(th, td, td2);
-                        $('#disease tbody').appendChild(tr);
+                        $('#disease tbody').appendChild(makeDisease(code, name));
                     })
                     return data;
                 }).then((disease) => {
@@ -521,12 +515,14 @@
         html,
         body {
             width: 100%;
-            height: 100%;
             margin: 0;
             padding: 0;
+            height: 100%;
         }
 
         #editorWrap {
+            min-height: 100%;
+            height: auto;
             text-align: center;
             padding: 10px;
             padding-bottom: 2000px;
