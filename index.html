@@ -254,7 +254,8 @@
                     data.innerHTML = a?.data || '';
                     nextInner.innerHTML = a?.next || '';
                     next.href = a?.next ? `#${a?.next}` : '';
-                    if (!memory[a?.next] && !disease[a?.next]) next.classList.add('red');
+                    if (disease[a?.next]) next.classList.add('green');
+                    else if (!memory[a?.next]) next.classList.add('red');
                     div.appendChildren(data, next, btnArea);
                 }
 
@@ -273,8 +274,9 @@
                     } else {
                         const nextCode = nextInput.value;
                         next.href = `#${nextCode}`;
-                        if (!memory[nextCode] || disease[nextCode]) next.classList.add('red');
-                        else next.classList.remove('red');
+                        if (disease[nextCode]) next.classList.add('green');
+                        else if (memory[nextCode]) next.classList.remove('red');
+                        else next.classList.add('red');
                         nextInner.innerHTML = nextCode;
                         data.innerHTML = dataInput.value;
                         dataInput.replaceWith(data);
@@ -365,7 +367,7 @@
                         const name = disease[code];
                         $('#disease tbody').appendChild(makeDisease(code, name));
                     })
-                    return data;
+                    return disease;
                 }).then((disease) => {
                     db.ref('question/')
                         .get()
@@ -476,6 +478,10 @@
 
         .red {
             color: red !important;
+        }
+
+        .green {
+            color: green !important;
         }
 
         * {
@@ -634,7 +640,7 @@
             width: 95%;
             margin-left: auto;
             margin-top: 5px;
-            padding: 5px;
+            padding: 3px;
             font-size: .9em;
             position: relative;
             display: flex;
@@ -659,12 +665,16 @@
         .question {
             width: 100%;
             border: 1px solid;
-            padding: 10px;
+            padding: 5px;
             margin: auto;
             position: relative;
             display: flex;
             align-items: baseline;
             /* justify-content: ; */
+        }
+
+        .question .code {
+            font-size: 1.3em;
         }
 
         .question .type,
