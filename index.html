@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPX 데이터</title>
+    <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-analytics.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.1/firebase-firestore.js"></script>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css">
+
+    <script type="module">
+        if (Node.prototype.appendChildren === undefined) {
+            Node.prototype.appendChildren = function () {
+                let children = [...arguments];
+                if (
+                    children.length == 1 &&
+                    Object.prototype.toString.call(children[0]) == "[object Array]"
+                ) {
+                    children = children[0];
+                }
+
+                const documentFragment = document.createDocumentFragment();
+                children.forEach(c => documentFragment.appendChild(c));
+                this.appendChild(documentFragment);
+            };
+        }
+
+        const fb = firebase;
+        const fbConfig = {
+            apiKey: "AIzaSyB-Su8LonH1R-R8Tgmpz7K4yDNzaCbkoqY",
+            authDomain: "cpxdata-23830.firebaseapp.com",
+            projectId: "cpxdata-23830",
+            storageBucket: "cpxdata-23830.appspot.com",
+            messagingSenderId: "773633004986",
+            appId: "1:773633004986:web:e9642f2de2461518283983"
+        };
+
+        (async () => {
+            window.$ = document.querySelector.bind(document);
+            window.$$ = document.querySelectorAll.bind(document);
+            window._$ = document.createElement.bind(document);
+            const ss = sessionStorage;
+            if (ss.sector) $('#sector').value = ss.sector;
+            $('#sector').onchange = () => { ss.sector = $('#sector').value; }
+
+            const app = fb.initializeApp(fbConfig);
+            const db = fb.database();
+
+            const types = {
+                "0": 'OX',
+                "1": '객관식',
+                "2": '주관식'
+            }
+
+            function makeQuestion(q) {
+                const wrap = _$('div');
+                const div = _$('div');
+                div.classList.add('question');
+                const type = _$('span');
+                const anchor = _$('a');
+                const code = _$('h2');
+                const data = _$('span');
+                data.innerHTML = q?.data || '';
+                type.innerHTML = q?.type ? `(${types[q?.type]})` : '';
+                code.innerHTML = q?.code || '';
+
+                wrap.classList.add('questionWrap');
+                data.classList.add('data');
+                type.classList.add('type');
+                code.classList.add('code');
+
+                const btnArea = _$('div');
+                const edit = _$('button');
+                const add = _$('button');
+                const subq = _$('button');
+                const del = _$('button');
+                btnArea.classList.add('btnArea');
+                edit.classList.add('edit', 'fa', 'fa-edit');
+                add.classList.add('add', 'fa', 'fa-plus');
+                subq.classList.add('subq', 'fa', 'fa-plus');
+                del.classList.add('del', 'fa', 'fa-trash');
+                edit.innerHTML = '수정';
+                add.innerHTML = '답변추가';
+                subq.innerHTML = '하위질문추가';
+                del.innerHTML = '삭제';
+                btnArea.appendChildren(edit, add, subq, del);
+
+                anchor.id = q?.code || '';
+                anchor.appendChild(code);
+                div.appendChildren(btnArea, anchor, data, type);
+                wrap.appendChild(div);
+                edit.onclick = () => {
+                    if (edit.classList.contains('fa-edit')) {
+                        data.setAttribute('contenteditable', true);
+                        type.setAttribute('contenteditable', true);
+                        edit.classList.replace('fa-edit', 'fa-save');
+                        edit.innerHTML = '저장'
+                    } else {
+                        // db.ref('question/')
+                        data.setAttribute('contenteditable', false);
+                        type.setAttribute('contenteditable', false);
+                        edit.classList.replace('fa-save', 'fa-edit');
+                        edit.innerHTML = '수정'
+                    }
+                }
+                del.onclick = () => {
+                    if (confirm('질문과 하위 답변, 하위질문을 삭제하시겠습니까?')) {
+                        wrap.remove();
+                        // db.ref('question/')
+                    }
+                }
+                const answers = _$('div');
+                q?.answer?.forEach(a => {
+                    wrap.appendChild(makeAnswer(a));
+                })
+                add.onclick = () => {
+                    wrap.appendChild(makeAnswer());
+                }
+                subq.onclick = () => {
+                    const next = `${q?.code}1`;
+                    $('#editor').insertBefore(makeQuestion({ code: next }), wrap.nextElementSibling);
+                }
+                wrap.setAttribute('data-depth', q?.code?.length - 3);
+                return wrap;
+            }
+
+            function makeAnswer(a) {
+                const div = _$('div');
+                div.classList.add('answer');
+                const data = _$('span');
+                const anchor = _$('a');
+                const next = _$('span');
+                data.classList.add('data');
+                next.classList.add('next');
+                data.innerHTML = a?.data || '';
+                next.innerHTML = a?.next || '';
+                anchor.href = a?.next ? `#${a?.next}` : '';
+                if (!$(`#${a?.next}`)) anchor.style.color = 'red';
+                anchor.appendChild(next);
+
+                const btnArea = _$('span');
+                const edit = _$('button');
+                const del = _$('button');
+                btnArea.classList.add('btnArea');
+                edit.classList.add('edit', 'fa', 'fa-edit');
+                del.classList.add('del', 'fa', 'fa-trash');
+                edit.innerHTML = '수정';
+                del.innerHTML = '삭제';
+
+                btnArea.appendChildren(edit, del);
+                div.appendChildren(data, anchor, btnArea);
+                edit.onclick = () => {
+                    if (edit.classList.contains('fa-edit')) {
+                        data.setAttribute('contenteditable', true);
+                        next.setAttribute('contenteditable', true);
+                        edit.classList.replace('fa-edit', 'fa-save');
+                        edit.innerHTML = '저장'
+                    } else {
+                        data.setAttribute('contenteditable', false);
+                        next.setAttribute('contenteditable', false);
+                        edit.classList.replace('fa-save', 'fa-edit');
+                        edit.innerHTML = '수정'
+                    }
+                }
+
+                del.onclick = () => {
+                    if (confirm('답변을 삭제하시겠습니까?')) {
+                        div.remove();
+                        // db.ref('question/')
+                    }
+                }
+                return div;
+            }
+
+            // db.ref('question/QR0').set({
+            //     "data": "가슴이 어떻게 아프신가요?",
+            //     "type": 2,
+            //     "code": "QR0",
+            //     "answer": [{
+            //         "data": "명치 주위가 아파요",
+            //         "next": "QC0"
+            //     }]
+            // })
+            db.ref('question/')
+                .get()
+                .then(e => e.val())
+                .then(e => {
+                    console.log(e);
+                    $('#editor').innerHTML = '';
+                    Object.keys(e).sort().forEach(k => {
+                        let q = e[k];
+                        const wrap = makeQuestion(q);
+                        $('#editor').appendChild(wrap);
+                    })
+                }).then(() => {
+                    if (location.hash) location.href = location.hash;
+                })
+            $('#addQuestion').onclick = () => {
+                if ($('#sector').value) {
+                    const code = `Q${$('#sector').value}1`;
+                    $('#editor').appendChild(makeQuestion({ code }));
+                } else {
+                    alert("분야를 선택해주세요");
+                }
+            }
+        })();
+
+    </script>
+</head>
+
+<body>
+    <div id="editorWrap">
+        <h1>CPX data manager</h1>
+        <div>
+            <select name="sector" id="sector">
+                <option value="G">(G) 소화기</option>
+                <option value="C">(C) 순환기</option>
+                <option value="R">(R) 호흡기</option>
+                <option value="U">(U) 신장/비뇨</option>
+                <option value="S">(S) 전신</option>
+                <option value="M">(M) 근골격</option>
+                <option value="D">(D) 피부</option>
+                <option value="N">(N) 정신/신경</option>
+                <option value="O">(O) 산부/여성</option>
+                <option value="P">(P) 소아</option>
+            </select>
+            <button class="fa fa-plus" id="addQuestion">질문추가</button>
+        </div>
+        <ol id="guide">
+            <li>주소창 끝에 (#질문코드)를 입력하면 질문으로 바로 이동합니다.</li>
+            <li>질문코드는 진료과목을 입력하면 자동으로 배정됩니다.</li>
+        </ol>
+        <div id="editor">
+            <div id="loading"></div>
+        </div>
+    </div>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        #editorWrap,
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #editorWrap {
+            text-align: center;
+            padding: 10px;
+            padding-bottom: 2000px;
+        }
+
+        #guide {
+            text-align: left;
+            padding-left: 1.5em;
+            max-width: 800px;
+            margin: 10px auto;
+        }
+
+
+        #loading {
+            display: table;
+            margin: auto;
+            width: 80px;
+            height: 80px;
+        }
+
+        #loading:after {
+            content: " ";
+            display: block;
+            width: 64px;
+            height: 64px;
+            margin: 8px;
+            border-radius: 50%;
+            border: 6px solid;
+            border-color: #000 transparent #000 transparent;
+            animation: loading 1.2s linear infinite;
+        }
+
+        @keyframes loading {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        *:focus {
+            outline: none;
+        }
+
+        [editable=true] {
+            background: #aaa;
+        }
+
+        #editor {
+            margin: auto;
+            text-align: left;
+            max-width: 1000px;
+        }
+
+        .questionWrap {
+            display: grid;
+            width: 100%;
+            margin-bottom: 10px;
+            margin-left: auto;
+        }
+
+        .questionWrap[data-depth="1"] {
+            width: 95%;
+        }
+
+        .questionWrap[data-depth="2"] {
+            width: 90%;
+        }
+
+        .questionWrap[data-depth="3"] {
+            width: 85%;
+        }
+
+        .questionWrap[data-depth="4"] {
+            width: 80%;
+        }
+
+        .questionWrap[data-depth="5"] {
+            width: 75%;
+        }
+
+        .questionWrap[data-depth="6"] {
+            width: 70%;
+        }
+
+        .questionWrap[data-depth="7"] {
+            width: 65%;
+        }
+
+        .answer {
+            border: 1px solid;
+            width: 95%;
+            margin-left: auto;
+            margin-top: 5px;
+            padding: 5px;
+            font-size: .9em;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .answer .data,
+        .answer>a {
+            padding: 5px;
+        }
+
+        .answer .btnArea {
+            margin-left: auto;
+            align-self: center;
+        }
+
+        .answer .next {
+            font-weight: bold;
+        }
+
+        .question {
+            width: 100%;
+            border: 1px solid;
+            padding: 10px;
+            margin: auto;
+            position: relative;
+            display: flex;
+            align-items: baseline;
+            /* justify-content: ; */
+        }
+
+        .question .type,
+        .question .code,
+        .question .data {
+            display: inline-block;
+            padding: 5px;
+            margin: 0;
+        }
+
+        .question .btnArea {
+            text-align: right;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .btnArea>* {
+            cursor: pointer;
+            padding: 3px;
+        }
+
+        @media (max-width:768px) {
+            .question {
+                padding-top: 30px;
+            }
+        }
+    </style>
+</body>
+
+</html>
