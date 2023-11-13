@@ -351,12 +351,17 @@
                 .then(data => data.val())
                 .then(data => {
                     disease = data || {};
-                    Object.entries(disease).forEach(([code, name]) => {
+                    Object.keys(disease).sort().forEach((code) => {
+                        const name = disease[code];
                         const tr = _$('tr');
                         const anchor = _$('a');
                         const th = _$('th');
                         const td = _$('td');
                         const td2 = _$('td');
+                        const edit = _$('button');
+                        edit.classList.add('fa', 'fa-edit');
+                        edit.innerHTML = '수정'
+                        td2.appendChild(edit);
                         anchor.id = code;
                         anchor.innerText = code;
                         th.appendChild(anchor);
