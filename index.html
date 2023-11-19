@@ -60,6 +60,7 @@
         if (ss.sector) $('#sector').value = ss.sector;
         $('#sector').onchange = () => { ss.sector = $('#sector').value; }
         const editor = $("#editor");
+        const diseaseTable = $('#disease tbody');
 
         const types = {
             "0": 'OX',
@@ -325,10 +326,6 @@
                 })
             }
 
-            $('#diseaseName').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
-            $('#diseaseCode').onkeydown = e => { if (e.key == 'Enter') addDisease(); }
-            $('#disease a').onclick = addDisease;
-
             function makeDisease(code, name) {
                 const tr = _$('tr');
                 const anchor = _$('a');
@@ -352,7 +349,7 @@
                 const code = $('#diseaseCode');
                 const name = $('#diseaseName');
                 db.ref(`disease/${code.value}`).set(name.value).then(() => {
-                    $('#disease tbody').insertOrder(makeDisease(code.value, name.value));
+                    diseaseTable.insertOrder(makeDisease(code.value, name.value));
                     code.value = '';
                     name.value = '';
                 })
@@ -362,10 +359,30 @@
                 .get()
                 .then(data => data.val())
                 .then(data => {
+                    diseaseTable.innerHTML = '';
+                    const tr = _$('tr');
+                    const th = _$('th');
+                    const td = _$('td');
+                    const td2 = _$('td');
+                    const code = _$('input');
+                    const name = _$('input');
+                    const add = _$('a');
+                    code.id = 'diseaseCode';
+                    name.id = 'diseaseName';
+                    code.type = name.type = 'text';
+                    code.onkeydown = name.onkeydown = e => { if (e.key == 'Enter') addDisease(); };
+                    add.classList.add('fa', 'fa-plus');
+                    add.onclick = addDisease;
+
+                    th.appendChild(code);
+                    td.appendChild(name);
+                    td2.appendChild(add);
+                    tr.appendChildren(th, td, td2);
+                    diseaseTable.appendChild(tr);
                     disease = data || {};
                     Object.keys(disease).sort().forEach((code) => {
                         const name = disease[code];
-                        $('#disease tbody').appendChild(makeDisease(code, name));
+                        diseaseTable.appendChild(makeDisease(code, name));
                     })
                     return disease;
                 }).then((disease) => {
